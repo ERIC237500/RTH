@@ -64,7 +64,7 @@ const SUPABASE_KEY="sb_publishable_drQXTx8XmEhkIrqYfrPqcw_xUMJeeFk";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY),T='docs',LS=new Set();
 let MY;try{MY=localStorage.getItem('uid');if(!MY){MY='u'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem('uid',MY)}}catch(e){MY='u'+Math.random().toString(36).slice(2,10)}
 let _rt;const refresh=()=>{clearTimeout(_rt);_rt=setTimeout(()=>LS.forEach(f=>f()),200)};
-const wr=async p=>{const r=await p;if(r.error)throw r.error;refresh();return r};
+const wr=async p=>{const r=await p;if(r.error)throw r.error;await Promise.all([...LS].map(f=>f()));return r};
 const claude={async use(n){
  if(n==='db')return{collection:c=>({
   onSnapshot:(f,e)=>{let t;const load=async()=>{const r=await sb.from(T).select('id,data').eq('collection',c);if(r.error){e&&e(r.error);return}f({docs:r.data.map(d=>({id:d.id,data:()=>d.data}))})};LS.add(load);load();
@@ -128,6 +128,9 @@ function draw(){
   $('#h1').textContent={home:'🙌 함께 나눔',songs:'🎵 WORSHIP of REMNANT',word:'📖 MESSAGE of REMNANT',pray:'🙏 PRAISE of REMNANT'}[site];
   document.body.className=site==='home'?'home':'s-'+site;$('#h1').style.display=site==='home'?'none':'';$('#hm').style.display=site==='home'?'none':'';$('#tb').style.display=site==='songs'?'':'none';
   if(site==='home')return home2(v);
+  if(site==='songs'&&view&&view.kind==='edit'&&v.querySelector('#ph'))return;
+  if(site==='word'&&wv&&v.querySelector('#rf'))return;
+  if(site==='pray'&&pv&&v.querySelector('#ty'))return;
   if(err&&!db){v.innerHTML=`<p class="mu">${esc(err)}</p>`;return}
   if(site!=='pray')pv=null;
   if(site==='word')return wordPage(v);
@@ -160,18 +163,18 @@ function viewer(v){
   $('#dn').onclick=()=>save(`${s.title}.txt`,`${s.title} (Key ${to})\n\n${toText(s.body||'',semis(base,to),flat)}`)}
 
 function editor(v){
-  const s=view.s,imgs=[...(s.imgs||[])];
+  if(!view.d)view.d={...view.s,imgs:[...(view.s.imgs||[])]};const s=view.d,imgs=s.imgs;
   v.innerHTML=`<button class="back" id="bk">← 취소</button><h2 style="margin:0 0 8px">${s.id?'악보 수정':'악보 올리기'}</h2>
-  <div class="row"><label class="b p" style="cursor:pointer">📷 악보 사진 첨부<input id="ph" type="file" accept="image/*" multiple hidden></label><span class="mu" id="am">악보 사진을 첨부하면 곡을 열 때 원본 사진이 보여요 (여러 장 가능)</span></div>
+  <div class="row"><label class="b p" style="cursor:pointer">📷 악보 사진 첨부<input id="ph" type="file" accept="image/*" multiple hidden></label><span class="mu" id="am">${imgs.length?'📎 사진 '+imgs.length+'장 첨부됨':'악보 사진을 첨부하면 곡을 열 때 원본 사진이 보여요 (여러 장 가능)'}</span></div>
   <div class="row"><input id="ti" placeholder="제목" value="${esc(s.title)}"></div>
   <div class="row"><input id="ar" placeholder="아티스트(선택)" value="${esc(s.artist||'')}" style="flex:1"><select id="ky" style="width:90px">${KEYS.map(k=>`<option ${k===s.key?'selected':''}>${k}</option>`).join('')}</select></div>
   <textarea id="bo" placeholder="가사 사이에 코드를 [G]처럼 넣어주세요&#10;&#10;[Verse]&#10;[G]주님의 [D]사랑은 [Em]끝이 없[C]네&#10;&#10;또는 코드만 있는 줄을 가사 위에 써도 돼요:&#10;G    D   Em&#10;주님의 사랑은">${esc(s.body||'')}</textarea>
   <div class="row"><button class="b p" id="sv">저장하고 공유</button>${s.id&&own?'<button class="b" id="del">삭제</button>':''}<span class="mu" id="m"></span></div>
   <p class="mu">미리보기</p><div class="sheet" id="pv"></div>`;
-  const pv=()=>{$('#pv').innerHTML=render($('#bo').value,0,false)};pv();$('#bo').oninput=pv;
+  const pv=()=>{$('#pv').innerHTML=render($('#bo').value,0,false)};pv();$('#bo').oninput=()=>{s.body=$('#bo').value;pv()};$('#ti').oninput=e=>{s.title=e.target.value};$('#ar').oninput=e=>{s.artist=e.target.value};$('#ky').onchange=e=>{s.key=e.target.value};
   $('#ph').onchange=async e=>{const fs=[...e.target.files].slice(0,6);if(!fs.length)return;const m=$('#am');
     if(!ast){m.textContent='사진을 저장할 수 없어요';return}
-    try{m.textContent='사진 저장 중…';for(const f of fs)imgs.push((await ast.upload(await shrink(f))).id);m.textContent='사진 '+imgs.length+'장 첨부됨. 제목을 입력하고 저장하세요 ✏️'}catch(x){m.textContent='사진 저장 실패: '+(x.message||x)}
+    try{m.textContent='사진 저장 중…';for(const f of fs)imgs.push((await ast.upload(await shrink(f))).id);m.textContent='📎 사진 '+imgs.length+'장 첨부됨. 제목을 입력하고 저장하세요 ✏️'}catch(x){m.textContent='사진 저장 실패: '+(x.message||x)}
     e.target.value=''};
   $('#bk').onclick=()=>{view=s.id?{kind:'song',id:s.id,n:0}:null;draw()};
   $('#sv').onclick=async()=>{if(s.id&&!can(s)){$('#m').textContent='수정 권한이 없어요';return}const title=$('#ti').value.trim();if(!title){$('#m').textContent='제목을 입력해주세요';return}
