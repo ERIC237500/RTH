@@ -76,10 +76,10 @@ const claude={async use(n){
    delete:()=>wr(sb.from(T).delete().eq('collection',c).eq('id',id))})})};
  if(n==='user')return{id:async()=>MY,isOwner:()=>true,canEdit:()=>true};
  if(n==='downloads')return{save:async({filename,data})=>{const b=data instanceof Blob?data:new Blob([data],{type:'text/plain;charset=utf-8'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)}};
- if(n==='assets')return{upload:async b=>{const bm=await createImageBitmap(b),r=Math.min(1,1100/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=bm.width*r;c.height=bm.height*r;c.getContext('2d').drawImage(bm,0,0,c.width,c.height);const id='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);await wr(sb.from(T).upsert({collection:'photos',id,data:{data:c.toDataURL('image/jpeg',.7),ts:Date.now()}}));return{id}}};
+ if(n==='assets')return{upload:async b=>{const du=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(b)}),id='p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);await wr(sb.from(T).upsert({collection:'photos',id,data:{data:du,ts:Date.now()}}));return{id}}};
  return null}};
 async function getPhoto(id){const r=await sb.from(T).select('data').eq('collection','photos').eq('id',id).maybeSingle();if(r.data)return r.data.data.data;throw new Error('photo not found')}
-function loadPhotos(root){root.querySelectorAll('img[data-ph]').forEach(async im=>{try{im.src=await getPhoto(im.dataset.ph)}catch(e){}})}
+function loadPhotos(root){root.querySelectorAll('img[data-ph]').forEach(async im=>{try{const u=await getPhoto(im.dataset.ph);if(u.startsWith('data:application/pdf'))renderPdf(im,u);else im.src=u}catch(e){}})}
 </script>
 <script>
 const $=s=>document.querySelector(s);
@@ -165,7 +165,7 @@ function viewer(v){
 function editor(v){
   if(!view.d)view.d={...view.s,imgs:[...(view.s.imgs||[])]};const s=view.d,imgs=s.imgs;
   v.innerHTML=`<button class="back" id="bk">← 취소</button><h2 style="margin:0 0 8px">${s.id?'악보 수정':'악보 올리기'}</h2>
-  <div class="row"><label class="b p" style="cursor:pointer">📷 악보 사진 첨부<input id="ph" type="file" accept="image/*" multiple hidden></label><span class="mu" id="am">${imgs.length?'📎 사진 '+imgs.length+'장 첨부됨':'악보 사진을 첨부하면 곡을 열 때 원본 사진이 보여요 (여러 장 가능)'}</span></div>
+  <div class="row"><label class="b p" style="cursor:pointer">📷 악보 사진·PDF 첨부<input id="ph" type="file" accept="image/jpeg,image/webp,image/gif,application/pdf" multiple hidden></label><span class="mu" id="am">${imgs.length?'📎 파일 '+imgs.length+'개 첨부됨':'악보 사진(JPG)이나 PDF를 첨부하면 곡을 열 때 원본이 보여요'}</span></div>
   <div class="row"><input id="ti" placeholder="제목" value="${esc(s.title)}"></div>
   <div class="row"><input id="ar" placeholder="아티스트(선택)" value="${esc(s.artist||'')}" style="flex:1"><select id="ky" style="width:90px">${KEYS.map(k=>`<option ${k===s.key?'selected':''}>${k}</option>`).join('')}</select></div>
   <textarea id="bo" placeholder="가사 사이에 코드를 [G]처럼 넣어주세요&#10;&#10;[Verse]&#10;[G]주님의 [D]사랑은 [Em]끝이 없[C]네&#10;&#10;또는 코드만 있는 줄을 가사 위에 써도 돼요:&#10;G    D   Em&#10;주님의 사랑은">${esc(s.body||'')}</textarea>
@@ -174,7 +174,7 @@ function editor(v){
   const pv=()=>{$('#pv').innerHTML=render($('#bo').value,0,false)};pv();$('#bo').oninput=()=>{s.body=$('#bo').value;pv()};$('#ti').oninput=e=>{s.title=e.target.value};$('#ar').oninput=e=>{s.artist=e.target.value};$('#ky').onchange=e=>{s.key=e.target.value};
   $('#ph').onchange=async e=>{const fs=[...e.target.files].slice(0,6);if(!fs.length)return;const m=$('#am');
     if(!ast){m.textContent='사진을 저장할 수 없어요';return}
-    try{m.textContent='사진 저장 중…';for(const f of fs)imgs.push((await ast.upload(await shrink(f))).id);m.textContent='📎 사진 '+imgs.length+'장 첨부됨. 제목을 입력하고 저장하세요 ✏️'}catch(x){m.textContent='사진 저장 실패: '+(x.message||x)}
+    try{m.textContent='사진 저장 중…';for(const f of fs){if(f.type==='image/png')throw new Error('PNG는 올릴 수 없어요. JPG나 PDF로 올려주세요');if(!['image/jpeg','image/webp','image/gif','application/pdf'].includes(f.type))throw new Error('JPG, WEBP, GIF, PDF만 올릴 수 있어요');if(f.size>8*1048576)throw new Error('8MB 이하 파일만 올릴 수 있어요');imgs.push((await ast.upload(f)).id)};m.textContent='📎 파일 '+imgs.length+'개 첨부됨. 제목을 입력하고 저장하세요 ✏️'}catch(x){m.textContent='사진 저장 실패: '+(x.message||x)}
     e.target.value=''};
   $('#bk').onclick=()=>{view=s.id?{kind:'song',id:s.id,n:0}:null;draw()};
   $('#sv').onclick=async()=>{if(s.id&&!can(s)){$('#m').textContent='수정 권한이 없어요';return}const title=$('#ti').value.trim();if(!title){$('#m').textContent='제목을 입력해주세요';return}
@@ -316,6 +316,9 @@ async function mkPdf(bl){
   add(`trailer\n<</Size ${T}/Root 1 0 R>>\nstartxref\n${xs}\n%%EOF`);
   return new Blob(parts,{type:'application/pdf'})}
 
+
+let _pj;async function pdfjs(){if(_pj)return _pj;await new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)});pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';return _pj=pdfjsLib}
+async function renderPdf(el,src){const lib=await pdfjs();const d=await lib.getDocument({data:Uint8Array.from(atob(src.split(',')[1]),c=>c.charCodeAt(0))}).promise;const box=document.createElement('div');el.replaceWith(box);for(let i=1;i<=d.numPages;i++){const pg=await d.getPage(i),vp=pg.getViewport({scale:1.6}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;c.style.cssText='width:100%;border-radius:8px;display:block;margin-bottom:8px';box.appendChild(c);await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise}}
 async function toJpg(blob){const bm=await createImageBitmap(blob),c=document.createElement('canvas');c.width=bm.width;c.height=bm.height;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(bm,0,0);const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));return{b:new Uint8Array(await b.arrayBuffer()),w:c.width,h:c.height}}
 async function mkPdf2(pg){
   const enc=new TextEncoder(),parts=[],off=[];let len=0;
@@ -335,7 +338,8 @@ async function dlSong(s){
   const ids=s.imgs||[];
   if(!ids.length)return imgOf([{s,key:s.key||'C'}],s.title);
   const bl=[];for(const id of ids){const u=typeof getPhoto==='function'?await getPhoto(id):'/_blob/'+id;bl.push(await (await fetch(u)).blob())}
-  if(bl.length===1)return save(s.title+(bl[0].type.includes('png')?'.png':'.jpg'),bl[0]);
+  if(bl.length===1)return save(s.title+('.'+(bl[0].type.split('/')[1]||'jpg').replace('jpeg','jpg')),bl[0]);
+  if(bl.some(b=>b.type==='application/pdf')){let i=1;for(const b of bl)await save(s.title+'-'+(i++)+'.'+(b.type.split('/')[1]||'jpg').replace('jpeg','jpg'),b);return}
   return save(s.title+'.pdf',await mkPdf2(await Promise.all(bl.map(toJpg))))}
 
 async function save(filename,data){
